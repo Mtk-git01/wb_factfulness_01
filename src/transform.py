@@ -32,24 +32,7 @@ def load_u5mr_data(url: str) -> pd.DataFrame:
     return df
 
 
-def prepare_country_year_u5mr(
-    df: pd.DataFrame,
-    country_name_or_iso: str
-) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
-    """
-    target year
-    1) observed yearly average
-    2) interpolated yearly series
-    
-
-    Returns
-    -------
-    observed_df : pd.DataFrame or None
-        mean in the observed year
-    interpolated_df : pd.DataFrame or None
-        interpolated data
-    """
-
+def prepare_country_year_u5mr(df: pd.DataFrame, country_name_or_iso: str):
     df_filtered = df[
         (df["Inclusion"] == 1) &
         (
@@ -61,7 +44,7 @@ def prepare_country_year_u5mr(
     if df_filtered.empty:
         return None, None
 
-    # numeric
+    # ---- to numeric ----
     df_filtered["Reference.Date"] = pd.to_numeric(
         df_filtered["Reference.Date"], errors="coerce"
     )
@@ -76,12 +59,12 @@ def prepare_country_year_u5mr(
     else:
         df_filtered["Standard.Error.of.Estimates"] = pd.NA
 
-    # e.g., 2017.5 -> 2017
+    # Year
+    df_filtered["Year"] = df_filtered["Reference.Date"].apply(
+        lambda x: int(x) if pd.notnull(x) else pd.NA
+    ).astype("Int64")
 
-    df_filtered["Year"] = pd.to_numeric(df_filtered["Reference.Date"], errors="coerce")
-    df_filtered["Year"] = df_filtered["Year"].apply(lambda x: int(x) if pd.notnull(x) else pd.NA).astype("Int64")
-
-    # take mean when multiple observation in the same year
+    # take mean 
     observed_df = (
         df_filtered
         .dropna(subset=["Year", "Estimates"])
@@ -90,7 +73,7 @@ def prepare_country_year_u5mr(
             "Estimates": "mean",
             "Standard.Error.of.Estimates": "mean",
             "Country.Name": "first",
-            "Country.ISO": "first"
+            "Country.ISO": "first",
         })
         .sort_values("Year")
         .reset_index(drop=True)
@@ -102,7 +85,7 @@ def prepare_country_year_u5mr(
     min_year = int(observed_df["Year"].min())
     max_year = int(observed_df["Year"].max())
 
-    all_years = pd.DataFrame({"Year": list(range(min_year, max_year + 1))})
+    all_years = pd.DataFrame({"Year": range(min_year, max_year + 1)})
 
     interpolated_df = (
         all_years
@@ -113,26 +96,33 @@ def prepare_country_year_u5mr(
                     "Estimates",
                     "Standard.Error.of.Estimates",
                     "Country.Name",
-                    "Country.ISO"
+                    "Country.ISO",
                 ]
             ],
             on="Year",
-            how="left"
+            how="left",
         )
         .sort_values("Year")
         .reset_index(drop=True)
     )
 
-    # country・ISO : forward/backward fill
+    # fill country iso
     interpolated_df["Country.Name"] = interpolated_df["Country.Name"].ffill().bfill()
     interpolated_df["Country.ISO"] = interpolated_df["Country.ISO"].ffill().bfill()
 
-    # linear
+    # ---- interpolate into numeric ----
+    interpolated_df["Estimates"] = pd.to_numeric(
+        interpolated_df["Estimates"], errors="coerce"
+    )
+    interpolated_df["Standard.Error.of.Estimates"] = pd.to_numeric(
+        interpolated_df["Standard.Error.of.Estimates"], errors="coerce"
+    )
+
+    # linear interpolate
     interpolated_df["Estimates"] = interpolated_df["Estimates"].interpolate(
         method="linear",
         limit_direction="both"
     )
-
     interpolated_df["Standard.Error.of.Estimates"] = interpolated_df[
         "Standard.Error.of.Estimates"
     ].interpolate(
