@@ -1,12 +1,13 @@
+from io import BytesIO
+from typing import Optional, Tuple
+
 import pandas as pd
 import requests
-from io import BytesIO
 
 
 def load_u5mr_data(url: str) -> pd.DataFrame:
     """
-    URLからUN-IGME Excelを取得し、Total U5MRシートを読み込む。
-    先頭2行は不要なので skiprows=2 で除外する。
+    UN-IGME Excel:Total U5MR sheet -> DataFrame
     """
     response = requests.get(url, timeout=60)
     response.raise_for_status()
@@ -16,86 +17,130 @@ def load_u5mr_data(url: str) -> pd.DataFrame:
         sheet_name="Total U5MR",
         skiprows=2
     )
-    return df
 
-
-def prepare_country_year_u5mr(df: pd.DataFrame, country_name_or_iso: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    指定国について、
-    1) 観測値を1年1レコードに集約した observed_yearly
-    2) 欠損年を線形補間した interpolated_yearly
-    を返す。
-    """
     required_cols = [
         "Country.Name",
         "Country.ISO",
         "Reference.Date",
         "Estimates",
-        "Inclusion",
+        "Inclusion"
     ]
     missing_cols = [c for c in required_cols if c not in df.columns]
     if missing_cols:
         raise ValueError(f"Missing columns: {missing_cols}")
 
-    work = df.copy()
+    return df
 
-    # 対象国 + 採用観測のみ
-    work = work[
-        (work["Inclusion"] == 1)
-        & (
-            (work["Country.Name"] == country_name_or_iso)
-            | (work["Country.ISO"] == country_name_or_iso)
+
+def prepare_country_year_u5mr(
+    df: pd.DataFrame,
+    country_name_or_iso: str
+) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    """
+    target year
+    1) observed yearly average
+    2) interpolated yearly series
+    
+
+    Returns
+    -------
+    observed_df : pd.DataFrame or None
+        mean in the observed year
+    interpolated_df : pd.DataFrame or None
+        interpolated data
+    """
+
+    df_filtered = df[
+        (df["Inclusion"] == 1) &
+        (
+            (df["Country.Name"] == country_name_or_iso) |
+            (df["Country.ISO"] == country_name_or_iso)
         )
     ].copy()
 
-    if work.empty:
-        raise ValueError(f"No data found for: {country_name_or_iso}")
+    if df_filtered.empty:
+        return None, None
 
-    # 数値変換
-    work["Reference.Date"] = pd.to_numeric(work["Reference.Date"], errors="coerce")
-    work["Estimates"] = pd.to_numeric(work["Estimates"], errors="coerce")
+    # numeric
+    df_filtered["Reference.Date"] = pd.to_numeric(
+        df_filtered["Reference.Date"], errors="coerce"
+    )
+    df_filtered["Estimates"] = pd.to_numeric(
+        df_filtered["Estimates"], errors="coerce"
+    )
 
-    if "Standard.Error.of.Estimates" in work.columns:
-        work["Standard.Error.of.Estimates"] = pd.to_numeric(
-            work["Standard.Error.of.Estimates"], errors="coerce"
+    if "Standard.Error.of.Estimates" in df_filtered.columns:
+        df_filtered["Standard.Error.of.Estimates"] = pd.to_numeric(
+            df_filtered["Standard.Error.of.Estimates"], errors="coerce"
         )
+    else:
+        df_filtered["Standard.Error.of.Estimates"] = pd.NA
 
-    work = work.dropna(subset=["Reference.Date", "Estimates"])
+    # e.g., 2017.5 -> 2017
 
-    # 年に変換
-    work["Year"] = work["Reference.Date"].astype(float).astype(int)
+    df_filtered["Year"] = pd.to_numeric(df_filtered["Reference.Date"], errors="coerce")
+    df_filtered["Year"] = df_filtered["Year"].apply(lambda x: int(x) if pd.notnull(x) else pd.NA).astype("Int64")
 
-    # 同一年に複数観測があれば平均
-    agg_dict = {"Estimates": "mean"}
-    if "Standard.Error.of.Estimates" in work.columns:
-        agg_dict["Standard.Error.of.Estimates"] = "mean"
-
-    observed_yearly = (
-        work.groupby("Year", as_index=True)
-        .agg(agg_dict)
-        .sort_index()
+    # take mean when multiple observation in the same year
+    observed_df = (
+        df_filtered
+        .dropna(subset=["Year", "Estimates"])
+        .groupby("Year", as_index=False)
+        .agg({
+            "Estimates": "mean",
+            "Standard.Error.of.Estimates": "mean",
+            "Country.Name": "first",
+            "Country.ISO": "first"
+        })
+        .sort_values("Year")
+        .reset_index(drop=True)
     )
 
-    if observed_yearly.empty:
-        raise ValueError(f"No usable yearly data found for: {country_name_or_iso}")
+    if observed_df.empty:
+        return None, None
 
-    # 全年レンジを作って補間
-    all_years = pd.Index(
-        range(int(observed_yearly.index.min()), int(observed_yearly.index.max()) + 1),
-        name="Year"
+    min_year = int(observed_df["Year"].min())
+    max_year = int(observed_df["Year"].max())
+
+    all_years = pd.DataFrame({"Year": list(range(min_year, max_year + 1))})
+
+    interpolated_df = (
+        all_years
+        .merge(
+            observed_df[
+                [
+                    "Year",
+                    "Estimates",
+                    "Standard.Error.of.Estimates",
+                    "Country.Name",
+                    "Country.ISO"
+                ]
+            ],
+            on="Year",
+            how="left"
+        )
+        .sort_values("Year")
+        .reset_index(drop=True)
     )
 
-    interpolated_yearly = observed_yearly.reindex(all_years)
+    # country・ISO : forward/backward fill
+    interpolated_df["Country.Name"] = interpolated_df["Country.Name"].ffill().bfill()
+    interpolated_df["Country.ISO"] = interpolated_df["Country.ISO"].ffill().bfill()
 
-    interpolated_yearly["Estimates"] = interpolated_yearly["Estimates"].interpolate(
-        method="linear"
+    # linear
+    interpolated_df["Estimates"] = interpolated_df["Estimates"].interpolate(
+        method="linear",
+        limit_direction="both"
     )
 
-    if "Standard.Error.of.Estimates" in interpolated_yearly.columns:
-        interpolated_yearly["Standard.Error.of.Estimates"] = interpolated_yearly[
-            "Standard.Error.of.Estimates"
-        ].interpolate(method="linear")
+    interpolated_df["Standard.Error.of.Estimates"] = interpolated_df[
+        "Standard.Error.of.Estimates"
+    ].interpolate(
+        method="linear",
+        limit_direction="both"
+    )
 
-    interpolated_yearly["is_interpolated"] = ~interpolated_yearly.index.isin(observed_yearly.index)
+    observed_years = set(observed_df["Year"].tolist())
+    interpolated_df["is_interpolated"] = ~interpolated_df["Year"].isin(observed_years)
 
-    return observed_yearly.reset_index(), interpolated_yearly.reset_index()
+    return observed_df, interpolated_df

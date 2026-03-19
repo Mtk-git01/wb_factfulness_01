@@ -1,69 +1,84 @@
 from pathlib import Path
-
-import matplotlib.pyplot as plt
+import pandas as pd
 
 from transform import load_u5mr_data, prepare_country_year_u5mr
 
-
 U5MR_URL = "https://childmortality.org/wp-content/uploads/2024/03/UNIGME-2024-Total-U5MR-IMR-and-NMR-database.xlsx"
-TARGET_COUNTRY = "Kenya"
+
+
+def get_all_countries(df: pd.DataFrame) -> list[str]:
+    return (
+        df.loc[df["Inclusion"] == 1, "Country.Name"]
+        .dropna()
+        .astype(str)
+        .sort_values()
+        .unique()
+        .tolist()
+    )
 
 
 def main() -> None:
     df = load_u5mr_data(U5MR_URL)
-    observed_df, interpolated_df = prepare_country_year_u5mr(df, TARGET_COUNTRY)
+    countries = get_all_countries(df)
 
-    print("=== Interpolated yearly data ===")
-    print(interpolated_df.tail(10))
-    print("\n=== Observed yearly average data ===")
-    print(observed_df.tail(10))
+    all_rows = []
 
-    # Output
-    output_dir = Path("outputs")
-    output_dir.mkdir(exist_ok=True)
+    for country in countries:
+        observed_df, interpolated_df = prepare_country_year_u5mr(df, country)
 
-    # CSV
-    observed_df.to_csv(output_dir / f"observed_u5mr_{TARGET_COUNTRY}.csv", index=False)
-    interpolated_df.to_csv(output_dir / f"interpolated_u5mr_{TARGET_COUNTRY}.csv", index=False)
+        if observed_df is None or interpolated_df is None:
+            print(f"Skipping {country}: no usable data")
+            continue
 
-    # plt
-    plt.figure(figsize=(12, 7))
+        # Streamlit用に列名を整理
+        out = interpolated_df.copy()
+        out["country_name"] = country
 
-    plt.plot(
-        interpolated_df["Year"],
-        interpolated_df["Estimates"],
-        linestyle="-",
-        label="Interpolated yearly U5MR"
-    )
+        # ISOコードも付けたい場合
+        country_iso = (
+            df.loc[df["Country.Name"] == country, "Country.ISO"]
+            .dropna()
+            .astype(str)
+        )
+        out["country_iso"] = country_iso.iloc[0] if len(country_iso) > 0 else None
 
-    plt.scatter(
-        observed_df["Year"],
-        observed_df["Estimates"],
-        s=50,
-        label="Observed yearly average"
-    )
+        # 列名をStreamlit側に合わせる
+        rename_map = {
+            "Year": "year",
+            "Estimates": "u5mr_estimate",
+            "Standard.Error.of.Estimates": "standard_error_of_estimates",
+        }
+        out = out.rename(columns=rename_map)
 
-    if "Standard.Error.of.Estimates" in interpolated_df.columns:
-        se = interpolated_df["Standard.Error.of.Estimates"]
-        lower_bound = interpolated_df["Estimates"] - 1.96 * se
-        upper_bound = interpolated_df["Estimates"] + 1.96 * se
+        # is_interpolated を付与
+        if "is_interpolated" not in out.columns:
+            observed_years = set(observed_df["Year"].tolist())
+            out["is_interpolated"] = ~out["year"].isin(observed_years)
 
-        plt.fill_between(
-            interpolated_df["Year"],
-            lower_bound,
-            upper_bound,
-            alpha=0.2,
-            label="95% Confidence Interval"
+        all_rows.append(
+            out[
+                [
+                    "country_name",
+                    "country_iso",
+                    "year",
+                    "u5mr_estimate",
+                    "standard_error_of_estimates",
+                    "is_interpolated",
+                ]
+            ]
         )
 
-    plt.title(f"Under-five Mortality Rate (U5MR): {TARGET_COUNTRY}")
-    plt.xlabel("Year")
-    plt.ylabel("Deaths per 1,000 live births")
-    plt.grid(True, linestyle="--", alpha=0.6)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(output_dir / f"mortality_trend_interpolated_{TARGET_COUNTRY}.png", dpi=300)
-    plt.close()
+    final_df = pd.concat(all_rows, ignore_index=True).sort_values(
+        ["country_name", "year"]
+    )
+
+    output_path = Path("streamlit_app/u5mr_country_year_all_countries.csv")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+    print(f"Saved: {output_path}")
+    print(final_df.head())
+    print(final_df.shape)
 
 
 if __name__ == "__main__":
