@@ -6,7 +6,7 @@ A compact development-data portfolio project combining a reproducible public ind
 This project is inspired by the **Factfulness** idea that public perceptions of the world can diverge from long-run development outcomes.
 
 ## Live dashboards
-- **R Shiny app**: `https://mtk01.shinyapps.io/wb_factfulness/`
+- **R Shiny app**: https://mtk01.shinyapps.io/wb_factfulness/
 - **Python Streamlit app**: (under debugging)
 
 ## Project overview
