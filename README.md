@@ -1,4 +1,4 @@
-# wb_factfulness_01
+# Factfulness-inspired dashboard
 
 A compact development-data portfolio project combining a reproducible public indicator pipeline with interactive dashboards built in **R Shiny** and 
 **Python Streamlit**.
