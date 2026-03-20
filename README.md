@@ -3,7 +3,7 @@
 A compact development-data portfolio project combining a reproducible public indicator pipeline with interactive dashboards built in **R Shiny** and 
 **Python Streamlit**.
 
-This project is inspired by the **Factfulness** idea that public perceptions of the world can diverge from long-run development outcomes.
+This project is inspired by the [Factfulness](https://www.amazon.co.jp/Factfulness-Reasons-Things-Better-English-ebook/dp/B0769XK7D6) by Hans Rosling idea that public perceptions of the world can diverge from long-run development outcomes.
 
 ## Live dashboards
 - **R Shiny app**: https://mtk01.shinyapps.io/wb_factfulness/
@@ -78,6 +78,17 @@ The extraction workflow:
 
 This is included as a **practical demo of extracting usable structured data from a published chart image when direct machine-readable data access is unavailable**.
 
+### Example debug view of chart extraction
+As part of the extraction workflow, the script identifies horizontal bar regions and visualizes detected contours for manual checking.
+
+> Source image note: Only a partial, reduced-size. It is included solely to illustrate the extraction workflow used in this portfolio project and is not intended as a substitute for the original source.
+
+<p align="center">
+  <img src="images/chart_extraction_debug_excerpt.png" alt="Partial chart extraction debug view" width="700">
+</p>
+
+> Note: The original chart image used by `scripts/extract_perception_from_chart.py` is not included in this public repository for copyright reasons. The repository includes the extraction script, a small debug excerpt for explanation, and the derived CSV used in the dashboards.
+
 ### 4. Interpolation flag
 Each interpolated row is explicitly marked so observed and estimated annual values can be distinguished.
 
@@ -114,6 +125,12 @@ wb_factfulness_01/
 │   └── extract_perception_from_chart.py
 ├── tests/
 │   └── test_transform.py
+├── images/
+│   └── chart_extraction_debug_excerpt.png
+├── R_shiny_app/
+│   ├── app.py
+│   ├── world_getting_worse_extracted.csv
+│   └── u5mr_country_year_all_countries.csv
 ├── streamlit_app/
 │   ├── app.py
 │   ├── requirements.txt
