@@ -1,4 +1,4 @@
-# wb_factfulness_01
+# Factfulness-inspired dashborad
 
 A compact development-data portfolio project combining a reproducible public indicator pipeline with interactive dashboards built in **R Shiny** and 
 **Python Streamlit**.
@@ -49,6 +49,8 @@ The pipeline reads the `Total U5MR` sheet from the UN-IGME observational databas
 - aggregates multiple observations within the same year into one annual record
 
 ### 2. Linear interpolation
+### Note on missing data
+The World Development Indicators (WDI) documentation notes that development data may have limitations in availability, reliability, and comparability, and that multiple aggregation methods are used depending on the indicator. In this project, I use a simple linear interpolation / fill method for demonstration purposes to create a continuous annual series, rather than to replicate the official WDI aggregation rules. :The WDI documentation notes that development data may contain missing values and may not always be fully comparable across countries and years. In this project, I use a simple linear interpolation method for demonstration purposes rather than attempting to reproduce the official aggregation rules. [WDI Sources and Methods](https://datatopics.worldbank.org/world-development-indicators/sources-and-methods.html).
 When a country has missing years between two observed points, the project fills those gaps using **linear interpolation**.
 
 If a value is observed at year `x0` and another value is observed at year `x1`, then the interpolated value at year `x` is:
