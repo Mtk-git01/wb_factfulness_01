@@ -1,0 +1,7 @@
+streamlit
+pandas
+plotly
+pycountry
+streamlit-plotly-events
+streamlit-folium
+requests

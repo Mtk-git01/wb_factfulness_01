@@ -2,16 +2,5 @@ __pycache__/
 *.pyc 
 .pytest_cache/ 
 
-# outputs
-outputs/
-*.csv
-
-scripts/
-*.png
-*.jpg
-*.jpeg
-
-streamlit_app/
-*.png
-*.jpg
-*.jpeg
+# ignore local source images
+scripts/world_getting_worse_chart.png
