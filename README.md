@@ -1,9 +1,10 @@
-# Factfulness-inspired dashborad
+# Factfulness-inspired dashborad: Is World getting worse?
 
 A compact development-data portfolio project combining a reproducible public indicator pipeline with interactive dashboards built in **R Shiny** and 
 **Python Streamlit**.
 
-This project is inspired by the [Factfulness](https://www.amazon.co.jp/Factfulness-Reasons-Things-Better-English-ebook/dp/B0769XK7D6) by Hans Rosling idea that public perceptions of the world can diverge from long-run development outcomes.
+This project is inspired by the [Factfulness](https://www.amazon.co.jp/Factfulness-Reasons-Things-Better-English-ebook/dp/B0769XK7D6) (Hans Rosling) idea that public perceptions of the world can diverge from long-run development outcomes.
+To bridge this gap, I integrated raw child mortality datasets from UN-IGME and implemented image detection-based data extraction to digitize and analyze information from visual sources.
 
 ## Live dashboards
 - **R Shiny app**: https://mtk01.shinyapps.io/wb_factfulness/
