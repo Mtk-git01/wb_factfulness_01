@@ -70,7 +70,8 @@ This repository is intentionally positioned as the **dashboard and analytical in
 
 The broader analytical data foundation behind this project — including **Azerbaijan CPF-style macro-financial analysis, banking operations and financial access monitoring, trade and payments data, and cross-country development indicators** — is maintained in the companion repository:
 
-- **Upstream pipeline and analytical data foundation**: [wb_dev_data_pipeline: Azerbaijan CPF - The Elusive Quest for Growth](https://github.com/Mtk-git01/wb_dev_data_pipeline)
+- **Upstream pipeline and analytical data foundation**:    
+  [wb_dev_data_pipeline (Azerbaijan CPF - The Elusive Quest for Growth)](https://github.com/Mtk-git01/wb_dev_data_pipeline)
 
 That companion repository serves as the upstream backbone for:
 
