@@ -66,26 +66,26 @@ In the dashboard, users can switch between **U5MR** and **Girls’ primary compl
 
 ## Data architecture and upstream pipeline
 
-This repository is intentionally the **presentation and analytical interpretation layer** of a larger development-data workflow.
+This repository is intentionally positioned as the **dashboard and analytical interpretation layer** of a broader development-statistics workflow.
 
-The upstream data acquisition and transformation work is maintained in the companion repository:
+The broader analytical data foundation behind this project — including **Azerbaijan CPF-style macro-financial analysis, banking operations and financial access monitoring, trade and payments data, and cross-country development indicators** — is maintained in the companion repository:
 
-- **Upstream pipeline**: https://github.com/Mtk-git01/wb_dev_data_pipeline
+- **Upstream pipeline and analytical data foundation**: [wb_dev_data_pipeline: Azerbaijan CPF - The Elusive Quest for Growth](https://github.com/Mtk-git01/wb_dev_data_pipeline)
 
-That companion project is used to:
+That companion repository serves as the upstream backbone for:
 
-- retrieve public development datasets and official-source files
-- organize them through a **Bronze / Silver / Gold** structure
-- validate transformed outputs
-- load curated tables into **BigQuery**
-- support downstream analytical applications such as this dashboard
+- Azerbaijan-focused CPF and macro-financial analysis
+- banking operations and financial-access monitoring with Central Bank based dashboard
+- trade, payments, and external-sector indicator processing
+- public development indicator transformation and validation
+- BigQuery-ready analytical table creation for downstream dashboards and interpretation
 
 In practical terms:
 
-- `wb_dev_data_pipeline` = **data engineering and curation layer**
-- this repository = **dashboard and statistical communication layer**
+- **`wb_dev_data_pipeline`** = upstream analytical foundation, data engineering, and curation layer with dashboard
+- **this repository** = downstream dashboard, interpretation, and statistical communication layer
 
-This separation is deliberate. It reflects how production-oriented statistical work is often structured: source ingestion and transformation are handled upstream, while interpretation and dissemination sit downstream.
+This separation is deliberate. It reflects how production-oriented statistical work is often structured: source ingestion and transformation are handled upstream, while analysis, interpretation, and dissemination sit downstream.
 
 ---
 
