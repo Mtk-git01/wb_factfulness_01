@@ -14,6 +14,7 @@ library(countrycode)
 # =========================
 perception_df_raw <- read_csv("world_getting_worse_extracted.csv", show_col_types = FALSE)
 u5mr_df_raw <- read_csv("u5mr_country_year_all_countries.csv", show_col_types = FALSE)
+completion_df_raw <- read_csv("girls_primary_completion_country_year.csv", show_col_types = FALSE)
 
 # =========================
 # 2. perception format
@@ -55,12 +56,83 @@ u5mr_df <- u5mr_df_raw %>%
   mutate(
     year = as.integer(year),
     is_interpolated = as.logical(is_interpolated),
-    `95% CI Lower` = u5mr - 1.96 * standard_error,
-    `95% CI Upper` = u5mr + 1.96 * standard_error
+    `95% CI Lower` = ifelse(!is.na(standard_error), u5mr - 1.96 * standard_error, NA_real_),
+    `95% CI Upper` = ifelse(!is.na(standard_error), u5mr + 1.96 * standard_error, NA_real_)
   )
 
 # =========================
-# 4. world map
+# 4. Girls primary completion format
+# =========================
+completion_names <- names(completion_df_raw)
+print(completion_names)
+
+if (!"country_name" %in% completion_names) {
+  stop(
+    paste0(
+      "girls_primary_completion_country_year.csv must contain 'country_name'. Found columns: ",
+      paste(completion_names, collapse = ", ")
+    )
+  )
+}
+
+if (!"country_iso" %in% completion_names) {
+  stop(
+    paste0(
+      "girls_primary_completion_country_year.csv must contain 'country_iso'. Found columns: ",
+      paste(completion_names, collapse = ", ")
+    )
+  )
+}
+
+if (!"year" %in% completion_names) {
+  stop("girls_primary_completion_country_year.csv must contain 'year'.")
+}
+
+if (!"value" %in% completion_names) {
+  stop("girls_primary_completion_country_year.csv must contain 'value'.")
+}
+
+completion_df <- completion_df_raw %>%
+  mutate(
+    country = country_name,
+    country_iso3 = country_iso,
+    year = as.integer(year),
+    completion_rate = as.numeric(value),
+    indicator_code = if ("indicator_code" %in% names(.)) as.character(indicator_code) else NA_character_,
+    indicator_name = if ("indicator" %in% names(.)) as.character(indicator) else "Primary completion rate, female"
+  ) %>%
+  filter(is.na(indicator_code) | indicator_code == "SE.PRM.CMPT.FE.ZS") %>%
+  select(country, country_iso3, year, completion_rate, indicator_code, indicator_name)
+
+# -------------------------
+# linear interpolation 
+# - by country
+# - sort by year
+# - only inner missing point
+# - exclude the edge
+# -------------------------
+completion_df <- completion_df %>%
+  group_by(country_iso3) %>%
+  arrange(year, .by_group = TRUE) %>%
+  mutate(
+    completion_rate_raw = completion_rate,
+    completion_rate = if (sum(!is.na(completion_rate)) >= 2) {
+      approx(
+        x = year[!is.na(completion_rate)],
+        y = completion_rate[!is.na(completion_rate)],
+        xout = year,
+        method = "linear",
+        rule = 1
+      )$y
+    } else {
+      completion_rate
+    },
+    completion_interpolated = is.na(completion_rate_raw) & !is.na(completion_rate)
+  ) %>%
+  ungroup()
+
+# =========================
+# 5. world map
 # =========================
 world <- ne_countries(scale = "medium", returnclass = "sf") %>%
   st_transform(4326) %>%
@@ -74,7 +146,7 @@ map_df <- world %>%
   )
 
 # =========================
-# 5. UI
+# 6. UI
 # =========================
 ui <- fluidPage(
   tags$head(
@@ -129,13 +201,16 @@ ui <- fluidPage(
       .dataTables_wrapper {
         font-size: 13px;
       }
+      .shiny-options-group {
+        margin-bottom: 10px;
+      }
     "))
   ),
   
-  div(class = "main-title", "Negativity Instinct vs Child Survival"),
+  div(class = "main-title", "Negativity Instinct vs Human Development"),
   div(
     class = "sub-title",
-    "Factfulness-inspired interactive dashboard"
+    "Factfulness-inspired interactive dashboard with child survival and girls' education indicators"
   ),
   
   fluidRow(
@@ -155,16 +230,26 @@ ui <- fluidPage(
       ),
       div(
         class = "info-card",
-        div(class = "meta-title", "Under-five mortality rate (U5MR): deaths per 1,000 live births"),
-        plotOutput("u5mr_plot", height = 390),
+        radioButtons(
+          "indicator_switch",
+          "Select indicator",
+          choices = c(
+            "U5MR" = "u5mr",
+            "Girls primary completion" = "completion"
+          ),
+          selected = "u5mr",
+          inline = TRUE
+        ),
+        uiOutput("indicator_meta_title"),
+        plotOutput("indicator_plot", height = 390),
         div(
           class = "small-note",
-          "U5MR measures the number of children dying before age 5 per 1,000 live births. Shaded band shows the 95% confidence interval when standard errors are available."
+          textOutput("indicator_note")
         )
       ),
       div(
         class = "info-card",
-        div(class = "meta-title", "Data sources and missingness"),
+        div(class = "meta-title", "Data sources and metadata"),
         tableOutput("metadata_info")
       )
     )
@@ -172,7 +257,7 @@ ui <- fluidPage(
 )
 
 # =========================
-# 6. Server
+# 7. Server
 # =========================
 server <- function(input, output, session) {
   
@@ -228,10 +313,11 @@ server <- function(input, output, session) {
   
   selected_country <- reactive({
     click <- input$world_map_shape_click
-    req(click$id)
+    
+    iso3 <- if (is.null(click$id)) "THA" else click$id
     
     map_df %>%
-      filter(country_iso3 == click$id) %>%
+      filter(country_iso3 == iso3) %>%
       slice(1)
   })
   
@@ -269,55 +355,148 @@ server <- function(input, output, session) {
       arrange(year)
   })
   
-  output$u5mr_plot <- renderPlot({
-    df <- selected_u5mr()
+  selected_completion <- reactive({
+    df <- selected_country()
     req(nrow(df) > 0)
+    iso3 <- df$country_iso3[1]
     
+    completion_df %>%
+      filter(country_iso3 == iso3) %>%
+      arrange(year)
+  })
+  
+  output$indicator_meta_title <- renderUI({
+    if (input$indicator_switch == "u5mr") {
+      div(
+        class = "meta-title",
+        "Under-five mortality rate (U5MR): deaths per 1,000 live births"
+      )
+    } else {
+      div(
+        class = "meta-title",
+        "Primary completion rate, female (% of relevant age group)"
+      )
+    }
+  })
+  
+  output$indicator_plot <- renderPlot({
     country_label <- selected_country()$name_long[1]
     
-    p <- ggplot(df, aes(x = year, y = u5mr)) +
-      geom_ribbon(
-        data = df %>% filter(!is.na(`95% CI Lower`), !is.na(`95% CI Upper`)),
-        aes(ymin = `95% CI Lower`, ymax = `95% CI Upper`),
-        fill = "#d73027",
-        alpha = 0.16,
-        inherit.aes = TRUE
-      ) +
-      geom_line(color = "#c62828", linewidth = 1.3, na.rm = TRUE) +
-      labs(
-        title = paste("U5MR trend:", country_label),
-        x = "Year",
-        y = "Deaths per 1,000 live births"
-      ) +
-      theme_minimal(base_size = 13) +
-      theme(
-        plot.title = element_text(face = "bold", color = "#1f2d3d"),
-        axis.title = element_text(color = "#1f2d3d"),
-        panel.grid.minor = element_blank()
-      )
-    
-    p
+    if (input$indicator_switch == "u5mr") {
+      df <- selected_u5mr()
+      req(nrow(df) > 0)
+      
+      ggplot(df, aes(x = year, y = u5mr)) +
+        geom_ribbon(
+          data = df %>% filter(!is.na(`95% CI Lower`), !is.na(`95% CI Upper`)),
+          aes(ymin = `95% CI Lower`, ymax = `95% CI Upper`),
+          fill = "#d73027",
+          alpha = 0.16,
+          inherit.aes = TRUE
+        ) +
+        geom_line(color = "#c62828", linewidth = 1.3, na.rm = TRUE) +
+        labs(
+          title = paste("U5MR trend:", country_label),
+          x = "Year",
+          y = "Deaths per 1,000 live births"
+        ) +
+        theme_minimal(base_size = 13) +
+        theme(
+          plot.title = element_text(face = "bold", color = "#1f2d3d"),
+          axis.title = element_text(color = "#1f2d3d"),
+          panel.grid.minor = element_blank()
+        )
+      
+    } else {
+      df <- selected_completion()
+      req(nrow(df) > 0)
+      
+      ggplot(df, aes(x = year, y = completion_rate)) +
+        geom_line(color = "#1b9e77", linewidth = 1.3, na.rm = TRUE) +
+        geom_point(
+          data = df %>% filter(completion_interpolated),
+          color = "#d95f02",
+          size = 2.2,
+          na.rm = TRUE
+        ) +
+        geom_hline(yintercept = 100, linetype = "dashed", color = "gray50") +
+        scale_x_continuous(
+          limits = c(1995, NA),
+          breaks = seq(1995, max(df$year, na.rm = TRUE), by = 5)
+        ) +
+        labs(
+          title = paste("Girls primary completion trend:", country_label),
+          x = "Year",
+          y = "% of relevant age group"
+        ) +
+        theme_minimal(base_size = 13) +
+        theme(
+          plot.title = element_text(face = "bold", color = "#1f2d3d"),
+          axis.title = element_text(color = "#1f2d3d"),
+          panel.grid.minor = element_blank()
+        )
+    }
+  })
+  
+  output$indicator_note <- renderText({
+    if (input$indicator_switch == "u5mr") {
+      "U5MR measures the number of children dying before age 5 per 1,000 live births. Shaded band shows the 95% confidence interval when standard errors are available."
+    } else {
+      "Primary completion rate can exceed 100% because the numerator may include over-age and under-age entrants to the final grade, while the denominator is the population of official graduation age. Missing values inside a country series are linearly interpolated; edge missing values are left as missing. Orange dots indicate interpolated values."
+    }
   })
   
   output$metadata_info <- renderTable({
-    df <- selected_u5mr()
+    u5mr_country_df <- selected_u5mr()
+    completion_country_df <- selected_completion()
     
-    u5mr_interpolated_share <- if (nrow(df) > 0) {
-      round(mean(df$is_interpolated, na.rm = TRUE) * 100, 1)
+    u5mr_interpolated_share <- if (nrow(u5mr_country_df) > 0 && any(!is.na(u5mr_country_df$is_interpolated))) {
+      round(mean(u5mr_country_df$is_interpolated, na.rm = TRUE) * 100, 1)
     } else {
       NA
+    }
+    
+    completion_interp_share <- if (nrow(completion_country_df) > 0) {
+      round(mean(completion_country_df$completion_interpolated, na.rm = TRUE) * 100, 1)
+    } else {
+      NA
+    }
+    
+    completion_latest <- if (nrow(completion_country_df) > 0) {
+      completion_country_df %>%
+        filter(!is.na(completion_rate)) %>%
+        arrange(desc(year)) %>%
+        slice(1)
+    } else {
+      data.frame()
     }
     
     data.frame(
       Item = c(
         "Perception data source",
         "U5MR data source",
-        "U5MR interpolated share(data missing ratio)"
+        "U5MR interpolated share",
+        "Girls completion data source",
+        "Girls completion indicator code",
+        "Girls completion interpolated share",
+        "Latest girls completion value"
       ),
       Value = c(
         "Factfulness / Gapminder visualization based on YouGov and Ipsos MORI survey results",
         "UN Inter-agency Group for Child Mortality Estimation (UN IGME)",
-        ifelse(is.na(u5mr_interpolated_share), "N/A", paste0(u5mr_interpolated_share, "%"))
+        ifelse(is.na(u5mr_interpolated_share), "N/A", paste0(u5mr_interpolated_share, "%")),
+        "UNESCO Institute for Statistics / World Bank indicator metadata",
+        ifelse(
+          nrow(completion_country_df) > 0 && any(!is.na(completion_country_df$indicator_code)),
+          completion_country_df$indicator_code[which(!is.na(completion_country_df$indicator_code))[1]],
+          "SE.PRM.CMPT.FE.ZS"
+        ),
+        ifelse(is.na(completion_interp_share), "N/A", paste0(completion_interp_share, "%")),
+        ifelse(
+          nrow(completion_latest) == 0,
+          "N/A",
+          paste0(round(completion_latest$completion_rate[1], 1), "% (", completion_latest$year[1], ")")
+        )
       )
     )
   }, colnames = FALSE)
